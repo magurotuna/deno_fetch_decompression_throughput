@@ -120,4 +120,4 @@ NOTE: `v2.0.0-rc.4-patched` refers to https://github.com/denoland/deno/compare/m
 
 ### Case 2: upstraem server serves text data
 
-TODO
+![2mb-text](./img/text.png)
