@@ -1,6 +1,7 @@
 use clap::Parser;
+use futures::stream::StreamExt as _;
 use hyper_util::rt::TokioExecutor;
-use tokio::io::AsyncReadExt as _;
+use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, BufReader};
 
 mod conn;
 mod traffic;
@@ -128,21 +129,42 @@ async fn spawn_deno(deno_path: &str, script_path: &str) -> anyhow::Result<tokio:
         .arg("-A")
         .arg(script_path)
         .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
 
-    use tokio::io::{AsyncBufReadExt as _, BufReader};
+    // NOTE: Since v2.0 rc version `Deno.serve` emits the readiness message to
+    // stderr instead of stdout. To make sure we can properly wait until the
+    // server is ready regardless of the Deno version, we inspect both stdout
+    // and stderr.
+    // https://github.com/denoland/deno/pull/25491
     let stdout = BufReader::new(proc.stdout.take().unwrap());
+    let stdout_line_stream = tokio_stream::wrappers::LinesStream::new(stdout.lines());
+    let stderr = BufReader::new(proc.stderr.take().unwrap());
+    let stderr_line_stream = tokio_stream::wrappers::LinesStream::new(stderr.lines());
+    let merged_stream = futures::stream::select(stdout_line_stream, stderr_line_stream);
+
     tokio::spawn(async move {
-        let mut lines = stdout.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            println!("{line}");
-            if line.starts_with("Listening on ") {
-                break;
+        let mut merged_stream = std::pin::pin!(merged_stream);
+
+        while let Some(line) = merged_stream.as_mut().next().await {
+            match line {
+                Ok(line) => {
+                    println!("{line}");
+                    if line.starts_with("Listening on ") {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::error!("Error reading line: {e:?}");
+                    anyhow::bail!("Error reading line");
+                }
             }
         }
+
+        Ok(())
     })
-    .await?;
+    .await??;
 
     Ok(proc)
 }
