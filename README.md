@@ -111,3 +111,13 @@ hyperfine --warmup 1 --runs 5 --export-json 1_45_3.json \
 | ----------- | ----- |
 | concurrency | 300   |
 | iterations  | 2000  |
+
+### Case 1: upstraem server serves brotli-compressed data
+
+![brotli-compressed](./img/brotli.png)
+
+NOTE: `v2.0.0-rc.4-patched` refers to https://github.com/denoland/deno/compare/main...magurotuna:deno:magurotuna/perf-fetch-decompression
+
+### Case 2: upstraem server serves text data
+
+TODO
